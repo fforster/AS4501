@@ -1,0 +1,10 @@
+CLAUDE.md
+.ipynb_checkpoints/
+.virtual_documents/
+__pycache__/
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
