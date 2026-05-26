@@ -1433,6 +1433,114 @@ $\Rightarrow$
 }
 
 \frame{
+  \frametitle{Derivation -- joint distribution}
+
+  \bi
+  \item Take zero mean ($m \equiv 0$) for clarity (recover the general
+    case by working with $y - m$). Let $\bm{f} = f(\bm{t})$ at the $n$
+    training times and $\bm{f}_* = f(\bm{t}_*)$ at the $m$ query
+    times. By the GP definition the latent values are jointly
+    Gaussian:
+    \begin{align}
+      \begin{pmatrix} \bm{f} \\ \bm{f}_* \end{pmatrix}
+      \sim \mathcal{N}\!\left(\bm{0}, \begin{pmatrix} K & K_*^T \\ K_* & K_{**} \end{pmatrix}\right),
+    \end{align}
+    where $K_{ij} = k(t_i, t_j)$, $\,[K_*]_{ij} = k(t_{*,i}, t_j)$,
+    $\,[K_{**}]_{ij} = k(t_{*,i}, t_{*,j})$.
+
+  \item Observations $\bm{y} = \bm{f} + \bm{\varepsilon}$ with
+    $\bm{\varepsilon} \sim \mathcal{N}(\bm{0}, \sigma^2 I)$
+    add independent noise to the diagonal:
+    \begin{align}
+      \begin{pmatrix} \bm{y} \\ \bm{f}_* \end{pmatrix}
+      \sim \mathcal{N}\!\left(\bm{0}, \begin{pmatrix} K + \sigma^2 I & K_*^T \\ K_* & K_{**} \end{pmatrix}\right).
+    \end{align}
+  \ei
+}
+
+\frame{
+  \frametitle{Derivation -- conditional Gaussian}
+
+  \bi
+  \item Standard fact for any jointly Gaussian
+    $\bm{x} = (\bm{x}_1, \bm{x}_2)^T$ with covariance block-structure
+    $\Sigma = \bigl(\begin{smallmatrix}\Sigma_{11} & \Sigma_{12} \\ \Sigma_{21} & \Sigma_{22}\end{smallmatrix}\bigr)$:
+    \begin{align}
+      \bm{x}_2 \,|\, \bm{x}_1 \sim \mathcal{N}\bigl(&\bm{\mu}_2 + \Sigma_{21}\, \Sigma_{11}^{-1}\, (\bm{x}_1 - \bm{\mu}_1), \notag \\
+      & \Sigma_{22} - \Sigma_{21}\, \Sigma_{11}^{-1}\, \Sigma_{12}\bigr).
+    \end{align}
+    (Derivable by completing the square in the joint density, or as a
+    Schur complement.)
+
+  \item Apply with $\bm{x}_1 = \bm{y}$, $\bm{x}_2 = \bm{f}_*$,
+    $\Sigma_{11} = K + \sigma^2 I$, $\Sigma_{12} = K_*^T$,
+    $\Sigma_{22} = K_{**}$, $\bm{\mu}_1 = \bm{\mu}_2 = \bm{0}$:
+    \begin{align}
+      \bm{\mu}_*    &= K_*\,(K + \sigma^2 I)^{-1}\,\bm{y} \\
+      \bm{\Sigma}_* &= K_{**} - K_*\,(K + \sigma^2 I)^{-1}\,K_*^T
+    \end{align}
+    -- exactly the GP regression formula.
+  \ei
+}
+
+\frame{
+  \frametitle{Derivation -- proof of the conditioning identity}
+
+  \bi
+  \item Trick: define the {\bf residual}
+    \begin{align}
+      \bm{z} = \bm{x}_2 - \Sigma_{21}\, \Sigma_{11}^{-1}\, \bm{x}_1.
+    \end{align}
+  \item $\bm{z}$ and $\bm{x}_1$ are jointly Gaussian (affine combination
+    of a Gaussian), and {\bf uncorrelated}:
+    \begin{align}
+      \mathrm{Cov}(\bm{z}, \bm{x}_1) &= \Sigma_{21} - \Sigma_{21}\Sigma_{11}^{-1}\Sigma_{11} = 0.
+    \end{align}
+    Uncorrelated jointly Gaussian $\Rightarrow$ {\bf independent}, so
+    $\bm{z}\,|\,\bm{x}_1 = \bm{z}$.
+
+  \item Mean and variance of $\bm{z}$:
+    \begin{align}
+      \mathbb{E}[\bm{z}] &= \bm{\mu}_2 - \Sigma_{21}\Sigma_{11}^{-1}\bm{\mu}_1, \\
+      \mathrm{Var}(\bm{z}) &= \Sigma_{22} - \Sigma_{21}\Sigma_{11}^{-1}\Sigma_{12}.
+    \end{align}
+  \item Therefore (using $\bm{x}_2 = \bm{z} + \Sigma_{21}\Sigma_{11}^{-1}\bm{x}_1$):
+    \begin{align}
+      \mathbb{E}[\bm{x}_2 | \bm{x}_1] &= \bm{\mu}_2 + \Sigma_{21}\Sigma_{11}^{-1}(\bm{x}_1 - \bm{\mu}_1), \\
+      \mathrm{Var}(\bm{x}_2 | \bm{x}_1) &= \mathrm{Var}(\bm{z}) = \Sigma_{22} - \Sigma_{21}\Sigma_{11}^{-1}\Sigma_{12}.
+    \end{align}
+  \ei
+}
+
+\frame{
+  \frametitle{Derivation -- marginal likelihood}
+
+  \bi
+  \item Marginalising the latent $\bm{f}$:
+    \begin{align}
+      p(\bm{y}|\theta) = \int p(\bm{y}|\bm{f}, \theta)\, p(\bm{f}|\theta)\, d\bm{f}
+    \end{align}
+    is a Gaussian--Gaussian convolution, again Gaussian:
+    \begin{align}
+      \bm{y}\,|\,\theta \sim \mathcal{N}(\bm{0},\, K_y), ~~~ K_y \equiv K + \sigma^2 I.
+    \end{align}
+
+  \item Therefore
+    \begin{align}
+      \log p(\bm{y}|\theta) = \underbrace{-\tfrac{1}{2}\,\bm{y}^T K_y^{-1} \bm{y}}_{\text{data fit}}
+                              \underbrace{- \tfrac{1}{2}\,\log|K_y|}_{\text{complexity penalty}}
+                              - \tfrac{n}{2}\log 2\pi.
+    \end{align}
+
+  \item Maximizing over $\theta$ is an automatic Occam's razor: too
+    short $\ell$ $\Rightarrow$ poor data fit (term 1 large negative),
+    too long $\ell$ $\Rightarrow$ ill--conditioned $K_y$ (term 2
+    large).
+  \ei
+}
+
+
+\frame{
   \frametitle{Multi--output / multi--band GPs}
 
   Astronomical light curves are observed in {\bf several bands}; the

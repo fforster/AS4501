@@ -1,0 +1,126 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage{amsmath, amssymb, bm}
+\usepackage{hyperref}
+
+\title{Why is the residual $\bm{z}$ uncorrelated with $\bm{x}_1$?\\
+       \large Supplementary note for AS4501 (Gaussian process derivation)}
+\author{Francisco F\"orster Bur\'on}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Setting}
+
+Let $\bm{x} = (\bm{x}_1, \bm{x}_2)^T$ be jointly Gaussian,
+\[
+  \bm{x} \sim \mathcal{N}\!\left(
+    \begin{pmatrix} \bm{\mu}_1 \\ \bm{\mu}_2 \end{pmatrix},
+    \;
+    \Sigma = \begin{pmatrix} \Sigma_{11} & \Sigma_{12} \\ \Sigma_{21} & \Sigma_{22} \end{pmatrix}
+  \right),
+  \qquad \Sigma_{12} = \Sigma_{21}^T.
+\]
+
+In the Gaussian-process posterior derivation we used the following
+identity, here stated for completeness:
+\[
+  \bm{x}_2 \mid \bm{x}_1 \;\sim\; \mathcal{N}\!\Bigl(
+     \bm{\mu}_2 + \Sigma_{21}\Sigma_{11}^{-1}(\bm{x}_1 - \bm{\mu}_1), \;\;
+     \Sigma_{22} - \Sigma_{21}\Sigma_{11}^{-1}\Sigma_{12}
+  \Bigr).
+\]
+The proof of this identity hinges on the claim that the
+\emph{residual}
+\begin{equation}\label{eq:zdef}
+  \bm{z} \;=\; \bm{x}_2 \;-\; \Sigma_{21}\Sigma_{11}^{-1}\,\bm{x}_1
+\end{equation}
+is uncorrelated with $\bm{x}_1$. The purpose of this note is to spell
+out \emph{why} that is true.
+
+\section*{Algebraic verification}
+
+Using bilinearity of covariance,
+\begin{align}
+  \mathrm{Cov}(\bm{z}, \bm{x}_1)
+  &= \mathrm{Cov}\bigl(\bm{x}_2 - \Sigma_{21}\Sigma_{11}^{-1}\bm{x}_1,\; \bm{x}_1\bigr) \\
+  &= \mathrm{Cov}(\bm{x}_2, \bm{x}_1) \;-\; \Sigma_{21}\Sigma_{11}^{-1}\,\mathrm{Cov}(\bm{x}_1, \bm{x}_1).
+\end{align}
+
+Substituting the known block-covariance entries
+$\mathrm{Cov}(\bm{x}_2, \bm{x}_1) = \Sigma_{21}$ and
+$\mathrm{Cov}(\bm{x}_1, \bm{x}_1) = \Sigma_{11}$:
+\begin{align}
+  \mathrm{Cov}(\bm{z}, \bm{x}_1)
+  &= \Sigma_{21} - \Sigma_{21}\Sigma_{11}^{-1}\Sigma_{11}
+   = \Sigma_{21} - \Sigma_{21}
+   = \bm{0}.
+\end{align}
+
+The algebra is short, but the choice of coefficient
+$\Sigma_{21}\Sigma_{11}^{-1}$ looked unmotivated. The next two sections
+explain why this is precisely the right coefficient.
+
+\section*{Where the coefficient comes from}
+
+Look for the matrix $A$ that makes
+$\mathrm{Cov}(\bm{x}_2 - A\bm{x}_1,\; \bm{x}_1) = 0$. Expanding,
+\[
+  \mathrm{Cov}(\bm{x}_2 - A\bm{x}_1,\; \bm{x}_1)
+  = \Sigma_{21} - A\,\Sigma_{11} = \bm{0}
+  \quad\Longleftrightarrow\quad
+  A = \Sigma_{21}\,\Sigma_{11}^{-1}.
+\]
+There is a \emph{unique} linear combination of $\bm{x}_1$ that, when
+subtracted from $\bm{x}_2$, removes all linear dependence. That is the
+content of equation~\eqref{eq:zdef}.
+
+\section*{Geometric intuition}
+
+Consider the inner product on random variables given by
+$\langle u, v\rangle := \mathrm{Cov}(u, v)$. With this inner product,
+\emph{uncorrelated} means \emph{orthogonal}.
+
+The vector $A\bm{x}_1 = \Sigma_{21}\Sigma_{11}^{-1}\bm{x}_1$ is the
+\emph{orthogonal projection} of $\bm{x}_2$ onto the linear span of the
+components of $\bm{x}_1$. The residual $\bm{z}$ is, by definition, the
+component of $\bm{x}_2$ perpendicular to that span. The Pythagorean
+decomposition reads
+\[
+  \bm{x}_2 \;=\; \underbrace{\Sigma_{21}\Sigma_{11}^{-1}\,\bm{x}_1}_{\text{projection}} \;+\; \underbrace{\bm{z}}_{\perp \,\bm{x}_1}.
+\]
+The same fact appears in ordinary least squares: residuals are
+orthogonal to the regressors.
+
+\section*{Connection to linear regression}
+
+Given centred $\bm{x}_1$ and $\bm{x}_2$, the least-squares regression
+coefficient
+\[
+  A^\star \;=\; \arg\min_A \mathbb{E}\bigl[\|\bm{x}_2 - A\bm{x}_1\|^2\bigr]
+\]
+has the closed form $A^\star = \Sigma_{21}\Sigma_{11}^{-1}$. So the
+construction of $\bm{z}$ is exactly: \emph{subtract the best linear
+predictor of $\bm{x}_2$ given $\bm{x}_1$.} Whatever is left is, by the
+defining optimality, uncorrelated with the regressor. This is the
+``magic'' that makes the Gaussian conditioning identity work.
+
+\section*{Why uncorrelated $\Rightarrow$ independent (Gaussian only)}
+
+For \emph{arbitrary} distributions, uncorrelated does not imply
+independent. For \emph{jointly Gaussian} variables it does. Since
+$\bm{z}$ is an affine function of $\bm{x} = (\bm{x}_1, \bm{x}_2)$, the
+pair $(\bm{z}, \bm{x}_1)$ is again jointly Gaussian. A jointly
+Gaussian pair with zero covariance has joint density that factors into
+a product of marginals, hence the variables are independent. This is
+what lets us write $\bm{z} \mid \bm{x}_1 = \bm{z}$ in the GP proof and
+read off the conditional moments by substituting
+$\bm{x}_2 = \bm{z} + \Sigma_{21}\Sigma_{11}^{-1}\bm{x}_1$:
+\begin{align}
+  \mathbb{E}[\bm{x}_2 \mid \bm{x}_1]   &= \bm{\mu}_2 + \Sigma_{21}\Sigma_{11}^{-1}\,(\bm{x}_1 - \bm{\mu}_1), \\
+  \mathrm{Var}(\bm{x}_2 \mid \bm{x}_1) &= \mathrm{Var}(\bm{z}) \;=\; \Sigma_{22} - \Sigma_{21}\Sigma_{11}^{-1}\Sigma_{12}.
+\end{align}
+
+\end{document}

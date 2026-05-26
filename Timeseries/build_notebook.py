@@ -1582,7 +1582,7 @@ plt.tight_layout(); plt.show()""")
 # ============================================================
 md("""---
 # Part III — Gaussian processes
-*PDF pages 88–93*
+*PDF pages 89–98*
 
 A complementary, non-parametric approach to the timeseries problem: a Gaussian process puts a probability distribution **over functions**, conditioned on the data. It handles irregular sampling and heteroscedastic errors out of the box, gives uncertainty bands for free, and extends naturally to multiple bands.""")
 
@@ -1591,7 +1591,7 @@ A complementary, non-parametric approach to the timeseries problem: a Gaussian p
 # G1. GP intro — sample from the prior
 # ============================================================
 md("""## G1. Gaussian processes — sampling from the prior
-> 📖 PDF pages 88–89
+> 📖 PDF pages 90–91
 
 Before any data, a GP defines a *distribution over functions*. The shape of those functions is controlled entirely by the kernel $k(t, t')$. Below we draw a few random samples from GPs with three common kernels (squared exponential, Matérn 3/2, periodic) to build intuition.""")
 
@@ -1622,7 +1622,7 @@ plt.tight_layout(); plt.show()""")
 # G2. GP regression on synthetic data
 # ============================================================
 md("""## G2. GP regression
-> 📖 PDF page 90
+> 📖 PDF pages 92–96 (formula, joint distribution, conditional Gaussian identity + proof, marginal likelihood)
 
 Given observations $(t, y)$ with noise variances $\\sigma^2$ and query times $t_*$:
 $$\\mu_* = K_*\\, (K + \\sigma^2 I)^{-1}\\, y, \\qquad \\Sigma_* = K_{**} - K_*\\,(K + \\sigma^2 I)^{-1}\\,K_*^T$$
@@ -1681,7 +1681,7 @@ plt.tight_layout(); plt.show()""")
 # G3. Per-band GP on a real SN lightcurve
 # ============================================================
 md("""## G3. Per-band GP interpolation — SN Ia from ALeRCE
-> 📖 PDF page 91 (light-curve interpolation)
+> 📖 PDF page 98 (applications — light-curve interpolation)
 
 We use the ZTF Type-Ia supernova **ZTF20abvtozi** (cached in `data/sn_lightcurve.json` — fetched once from ALeRCE with `magpsf` from the difference image, which is the right choice for transients since there is no template flux). We fit a separate GP to each band, letting `sklearn` learn the kernel hyperparameters.""")
 
@@ -1727,7 +1727,7 @@ plt.tight_layout(); plt.show()""")
 # G4. Multi-band joint GP (coregionalization)
 # ============================================================
 md("""## G4. Multi-band GP — using one band to inform another
-> 📖 PDF page 92 (multi-output GPs)
+> 📖 PDF page 97 (multi-output GPs)
 
 Per-band fits ignore the fact that $g$ and $r$ trace the same underlying physical source. A **joint multi-band GP** ties the two bands through a shared kernel; observations in one band then improve predictions in the other.
 
@@ -1818,6 +1818,87 @@ for ax, b, letter, color in [(axes[0], 0, 'g', 'C2'), (axes[1], 1, 'r', 'C3')]:
 axes[1].set_xlabel('MJD')
 axes[0].set_title(f'Joint multi-band GP: cross-band prediction with 70% of r hidden\\n'
                    f'ℓ={ell} d, σ_f={sigma_f}, ρ_gr={rho}')
+plt.tight_layout(); plt.show()""")
+
+
+# ============================================================
+# G4b. Head-to-head: joint multi-band vs independent r-only
+# ============================================================
+md("""### G4 (continued) — does the joint GP actually help?
+
+The previous cell uses **g + the 30% of r we kept** to predict r. To know whether the joint model is doing real work, we compare against the fair baseline: an **independent GP fit to the surviving 30% of r alone**, with no access to g. Both methods are evaluated at the *hidden* r-band timestamps (the ones we deliberately held out — the rest is "ground truth" we can check against), and we report the RMSE.
+
+When $\\rho \\to 0$ the joint GP would collapse to the independent fit. With $\\rho = 0.95$, g-band data drives most of the shape and the joint GP should be measurably tighter — that is the value of the cross-band correlation.""")
+
+code("""# Independent r-band GP fit on the surviving 30% only
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
+
+t_r_used = t_r_full[~hide]
+y_r_used = r_full[~hide]
+s_r_used = s_r_full[~hide]
+mean_r = y_r_used.mean()
+
+kernel_r = C(1.0, (0.01, 100)) * RBF(10.0, (0.5, 100)) + WhiteKernel(0.01, (1e-4, 1.0))
+gp_r_only = GaussianProcessRegressor(
+    kernel=kernel_r, alpha=s_r_used**2,
+    normalize_y=False, n_restarts_optimizer=3
+).fit(t_r_used[:, None], y_r_used - mean_r)
+print('Independent r-only GP optimized kernel:', gp_r_only.kernel_)
+
+# Predict both methods on the visualization grid + at the hidden timestamps
+mu_indep_grid,  std_indep_grid  = gp_r_only.predict(t_grid[:, None], return_std=True)
+mu_indep_grid  += mean_r
+mu_indep_hide,  std_indep_hide  = gp_r_only.predict(t_r_full[hide][:, None], return_std=True)
+mu_indep_hide  += mean_r
+
+# Joint GP prediction at the hidden timestamps
+X_hide = np.column_stack([t_r_full[hide], np.ones(hide.sum())])
+mu_joint_hide_c, std_joint_hide = fit_coreg(X_train, y_train, sigma_train,
+                                            X_hide, ell, sigma_f, rho)
+mu_joint_hide = mu_joint_hide_c + means[1]
+
+# Quantitative comparison at the held-out r-band detections
+truth = r_full[hide]
+rmse_indep = np.sqrt(np.mean((mu_indep_hide - truth)**2))
+rmse_joint = np.sqrt(np.mean((mu_joint_hide - truth)**2))
+# Mean predictive width is the typical (2σ) error bar
+width_indep = 2 * std_indep_hide.mean()
+width_joint = 2 * std_joint_hide.mean()
+print()
+print(f'Hidden r-band detections (N = {hide.sum()}):')
+print(f'              method              RMSE (mag)   mean 2σ width')
+print(f'  independent r-only GP            {rmse_indep:6.3f}        {width_indep:6.3f}')
+print(f'  joint multi-band GP (g+r):       {rmse_joint:6.3f}        {width_joint:6.3f}')
+print(f'  improvement factor:              {rmse_indep/rmse_joint:6.2f}×       {width_indep/width_joint:6.2f}×')""")
+
+code("""# Visual comparison on the r-band axis
+mask_r = X_test[:, 1] == 1
+fig, ax = plt.subplots(figsize=(11, 5))
+
+# Independent r-only GP
+ax.fill_between(t_grid, mu_indep_grid - 2*std_indep_grid, mu_indep_grid + 2*std_indep_grid,
+                alpha=0.12, color='C0')
+ax.plot(t_grid, mu_indep_grid, 'C0--', lw=1.5,
+        label=f'independent r-only GP  (RMSE {rmse_indep:.3f})')
+
+# Joint multi-band GP
+ax.fill_between(X_test[mask_r, 0],
+                mu_full[mask_r] - 2*std[mask_r],
+                mu_full[mask_r] + 2*std[mask_r],
+                alpha=0.18, color='C3')
+ax.plot(X_test[mask_r, 0], mu_full[mask_r], 'C3-', lw=1.5,
+        label=f'joint multi-band GP (g+r)  (RMSE {rmse_joint:.3f})')
+
+ax.errorbar(t_r_used, y_r_used, yerr=s_r_used, fmt='.', ms=5,
+            alpha=0.7, color='k', label='r data used (30%)')
+ax.errorbar(t_r_full[hide], r_full[hide], yerr=s_r_full[hide], fmt='x',
+            ms=6, alpha=0.7, color='gray', label='r HIDDEN (truth)')
+ax.invert_yaxis()
+ax.set_xlabel('MJD'); ax.set_ylabel('r magnitude')
+ax.set_title(f'r-band only: joint GP (with g) vs independent GP (without g)\\n'
+             f'30% of r used; joint shrinks uncertainty between observations')
+ax.legend(fontsize=9, loc='upper right')
 plt.tight_layout(); plt.show()""")
 
 
