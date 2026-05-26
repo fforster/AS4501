@@ -1578,6 +1578,250 @@ plt.tight_layout(); plt.show()""")
 
 
 # ============================================================
+# Part III header
+# ============================================================
+md("""---
+# Part III — Gaussian processes
+*PDF pages 88–93*
+
+A complementary, non-parametric approach to the timeseries problem: a Gaussian process puts a probability distribution **over functions**, conditioned on the data. It handles irregular sampling and heteroscedastic errors out of the box, gives uncertainty bands for free, and extends naturally to multiple bands.""")
+
+
+# ============================================================
+# G1. GP intro — sample from the prior
+# ============================================================
+md("""## G1. Gaussian processes — sampling from the prior
+> 📖 PDF pages 88–89
+
+Before any data, a GP defines a *distribution over functions*. The shape of those functions is controlled entirely by the kernel $k(t, t')$. Below we draw a few random samples from GPs with three common kernels (squared exponential, Matérn 3/2, periodic) to build intuition.""")
+
+code("""from sklearn.gaussian_process.kernels import RBF, Matern, ExpSineSquared
+
+def gp_prior_samples(kernel, t, n_samples=5, rng=None):
+    rng = np.random.default_rng(0) if rng is None else rng
+    K = kernel(t[:, None], t[:, None]) + 1e-8 * np.eye(len(t))
+    L = np.linalg.cholesky(K)
+    return (L @ rng.normal(size=(len(t), n_samples))).T
+
+t = np.linspace(0, 10, 400)
+kernels = {
+    'Squared exponential (ℓ=1)': RBF(length_scale=1.0),
+    'Matérn 3/2 (ℓ=1)':           Matern(length_scale=1.0, nu=1.5),
+    'Periodic (P=2.5, ℓ=1)':      ExpSineSquared(length_scale=1.0, periodicity=2.5),
+}
+fig, axes = plt.subplots(1, 3, figsize=(14, 3.5), sharey=True)
+for ax, (name, k) in zip(axes, kernels.items()):
+    for sample in gp_prior_samples(k, t, n_samples=5):
+        ax.plot(t, sample, lw=1.2, alpha=0.8)
+    ax.set_title(name); ax.set_xlabel('t')
+axes[0].set_ylabel('f(t)')
+plt.tight_layout(); plt.show()""")
+
+
+# ============================================================
+# G2. GP regression on synthetic data
+# ============================================================
+md("""## G2. GP regression
+> 📖 PDF page 90
+
+Given observations $(t, y)$ with noise variances $\\sigma^2$ and query times $t_*$:
+$$\\mu_* = K_*\\, (K + \\sigma^2 I)^{-1}\\, y, \\qquad \\Sigma_* = K_{**} - K_*\\,(K + \\sigma^2 I)^{-1}\\,K_*^T$$
+The kernel hyperparameters $(\\ell, \\sigma_f)$ are tuned by maximising the marginal log-likelihood. Below we hand-roll the math on a synthetic dataset, then cross-check with `sklearn.GaussianProcessRegressor`.""")
+
+code("""def rbf(t1, t2, ell, sigma_f):
+    return sigma_f**2 * np.exp(-0.5 * (t1[:, None] - t2[None, :])**2 / ell**2)
+
+def gp_posterior(t, y, sigma, t_star, ell, sigma_f):
+    K     = rbf(t, t, ell, sigma_f) + np.diag(sigma**2)
+    K_s   = rbf(t_star, t, ell, sigma_f)
+    K_ss  = rbf(t_star, t_star, ell, sigma_f)
+    L     = np.linalg.cholesky(K + 1e-8 * np.eye(len(K)))
+    alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
+    mu    = K_s @ alpha
+    v     = np.linalg.solve(L, K_s.T)
+    cov   = K_ss - v.T @ v
+    return mu, np.sqrt(np.clip(np.diag(cov), 0, None))
+
+# Synthetic noisy data from a smooth latent function
+rng = np.random.default_rng(0)
+def f_true(t): return np.sin(t) + 0.3*np.sin(3*t)
+t_train = np.sort(rng.uniform(0, 10, 18))
+sigma   = np.full_like(t_train, 0.15)
+y_train = f_true(t_train) + sigma * rng.normal(size=t_train.size)
+t_star  = np.linspace(-1, 11, 400)
+
+# Hand-rolled
+mu_hand, std_hand = gp_posterior(t_train, y_train, sigma, t_star, ell=1.0, sigma_f=1.0)
+
+# Sklearn (kernel hyperparameters fit automatically)
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
+gp = GaussianProcessRegressor(
+    kernel=C(1.0) * RBF(1.0) + WhiteKernel(0.02),
+    alpha=sigma**2, normalize_y=True, n_restarts_optimizer=5
+).fit(t_train[:, None], y_train)
+mu_sk, std_sk = gp.predict(t_star[:, None], return_std=True)
+print('Optimized kernel:', gp.kernel_)
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 4), sharey=True)
+for ax, (name, mu, std) in zip(axes, [
+    ('hand-rolled, fixed ℓ=1, σ_f=1', mu_hand, std_hand),
+    ('sklearn, optimised hyperparams', mu_sk, std_sk),
+]):
+    ax.plot(t_star, f_true(t_star), 'k--', lw=1, label='truth', alpha=0.6)
+    ax.fill_between(t_star, mu-2*std, mu+2*std, alpha=0.2, color='C0', label='±2σ')
+    ax.plot(t_star, mu, 'C0-', lw=1.5, label='posterior mean')
+    ax.errorbar(t_train, y_train, yerr=sigma, fmt='ko', ms=4, label='data')
+    ax.set_title(name); ax.set_xlabel('t'); ax.legend(fontsize=8)
+axes[0].set_ylabel('f(t)')
+plt.tight_layout(); plt.show()""")
+
+
+# ============================================================
+# G3. Per-band GP on a real SN lightcurve
+# ============================================================
+md("""## G3. Per-band GP interpolation — SN Ia from ALeRCE
+> 📖 PDF page 91 (light-curve interpolation)
+
+We use the ZTF Type-Ia supernova **ZTF20abvtozi** (cached in `data/sn_lightcurve.json` — fetched once from ALeRCE with `magpsf` from the difference image, which is the right choice for transients since there is no template flux). We fit a separate GP to each band, letting `sklearn` learn the kernel hyperparameters.""")
+
+code("""# Load the SN lightcurve
+with open(DATA / 'sn_lightcurve.json') as f:
+    sn = json.load(f)
+print(f"{sn['oid']} ({sn['class']}):  g={len(sn['t_g'])}  r={len(sn['t_r'])} detections")
+
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
+
+def fit_band(t, y, s, t_grid):
+    t = np.asarray(t); y = np.asarray(y); s = np.asarray(s)
+    # subtract mean so the GP zero-mean assumption fits
+    y0 = y.mean()
+    kernel = C(1.0, (0.01, 100)) * RBF(10.0, (0.5, 100)) + WhiteKernel(0.01, (1e-4, 1.0))
+    gp = GaussianProcessRegressor(kernel=kernel, alpha=s**2, normalize_y=False,
+                                   n_restarts_optimizer=3).fit(t[:, None], y - y0)
+    mu, std = gp.predict(t_grid[:, None], return_std=True)
+    return mu + y0, std, gp.kernel_
+
+t_min = min(min(sn['t_g']), min(sn['t_r']))
+t_max = max(max(sn['t_g']), max(sn['t_r']))
+t_grid = np.linspace(t_min - 5, t_max + 5, 500)
+
+fig, ax = plt.subplots(figsize=(11, 5))
+for letter, color in [('g', 'C2'), ('r', 'C3')]:
+    t, y, s = sn[f't_{letter}'], sn[f'y_{letter}'], sn[f's_{letter}']
+    mu, std, k_opt = fit_band(t, y, s, t_grid)
+    print(f'  {letter}-band optimized kernel: {k_opt}')
+    ax.errorbar(t, y, yerr=s, fmt='.', ms=5, alpha=0.7,
+                color=color, label=f'{letter} data (N={len(t)})')
+    ax.fill_between(t_grid, mu-2*std, mu+2*std, alpha=0.15, color=color)
+    ax.plot(t_grid, mu, '-', color=color, lw=1.5, label=f'{letter} GP mean')
+ax.invert_yaxis()
+ax.set_xlabel('MJD'); ax.set_ylabel('magnitude')
+ax.set_title(f'GP interpolation per band — {sn["oid"]}')
+ax.legend()
+plt.tight_layout(); plt.show()""")
+
+
+# ============================================================
+# G4. Multi-band joint GP (coregionalization)
+# ============================================================
+md("""## G4. Multi-band GP — using one band to inform another
+> 📖 PDF page 92 (multi-output GPs)
+
+Per-band fits ignore the fact that $g$ and $r$ trace the same underlying physical source. A **joint multi-band GP** ties the two bands through a shared kernel; observations in one band then improve predictions in the other.
+
+Simplest practical version — **intrinsic coregionalization model (ICM)**:
+$$k\\bigl((t,b),(t',b')\\bigr) = k_t(t, t') \\cdot B_{b,b'}$$
+where $B$ is a $2 \\times 2$ band-band correlation matrix.
+
+**PSD ("positive semi-definite") sidebar.** A symmetric matrix $B$ is PSD iff $\\mathbf{x}^T B \\mathbf{x} \\ge 0$ for every vector $\\mathbf{x}$ — equivalently, all eigenvalues are $\\ge 0$, equivalently $B = L L^T$ for some $L$. A GP covariance kernel **must** be PSD on every finite set of inputs (otherwise the multivariate Gaussian it defines is ill-posed and the Cholesky factorization we use blows up). The Schur product theorem guarantees that the element-wise product of two PSD matrices is PSD, so as long as the time kernel $k_t$ is PSD (always, by construction) and $B$ is PSD, the joint kernel is PSD too.
+
+We parametrize $B = \\bigl(\\begin{smallmatrix}1 & \\rho \\\\ \\rho & 1\\end{smallmatrix}\\bigr)$, whose eigenvalues are $1 \\pm \\rho$ — so PSD requires $-1 \\le \\rho \\le 1$. Limits: $\\rho = 1$ → bands are one latent function; $\\rho = 0$ → independent per-band GPs (the G3 case); $\\rho = -1$ → perfectly anti-correlated.
+
+Below we hand-roll the ICM, then demonstrate cross-band prediction by **deliberately hiding part of $r$** and recovering it from $g$ + the surviving $r$ data.""")
+
+code("""def coreg_kernel(X1, X2, ell, sigma_f, B):
+    \"\"\"X[:,0] = time,  X[:,1] = band index (0 or 1).\"\"\"
+    dt = X1[:, 0, None] - X2[None, :, 0]
+    kt = sigma_f**2 * np.exp(-0.5 * (dt / ell) ** 2)
+    b1 = X1[:, 1].astype(int)
+    b2 = X2[:, 1].astype(int)
+    kb = B[b1[:, None], b2[None, :]]
+    return kt * kb
+
+def fit_coreg(X_train, y_train, sigma_train, X_test, ell, sigma_f, rho):
+    \"\"\"ICM with a parameterized band-correlation matrix B = [[1, rho],[rho, 1]].\"\"\"
+    B = np.array([[1.0, rho], [rho, 1.0]])
+    K   = coreg_kernel(X_train, X_train, ell, sigma_f, B) + np.diag(sigma_train**2)
+    K_s = coreg_kernel(X_test,  X_train, ell, sigma_f, B)
+    K_ss= coreg_kernel(X_test,  X_test,  ell, sigma_f, B)
+    L   = np.linalg.cholesky(K + 1e-6 * np.eye(len(K)))
+    alpha = np.linalg.solve(L.T, np.linalg.solve(L, y_train))
+    mu  = K_s @ alpha
+    v   = np.linalg.solve(L, K_s.T)
+    return mu, np.sqrt(np.clip(np.diag(K_ss - v.T @ v), 0, None))
+
+def stack(sn, hide_r_mask=None):
+    \"\"\"Stack g and r into (X, y, sigma) arrays with a band column.\"\"\"
+    t_g, y_g, s_g = map(np.asarray, (sn['t_g'], sn['y_g'], sn['s_g']))
+    t_r, y_r, s_r = map(np.asarray, (sn['t_r'], sn['y_r'], sn['s_r']))
+    if hide_r_mask is not None:
+        t_r, y_r, s_r = t_r[~hide_r_mask], y_r[~hide_r_mask], s_r[~hide_r_mask]
+    X = np.vstack([np.column_stack([t_g, np.zeros_like(t_g)]),
+                   np.column_stack([t_r, np.ones_like(t_r)])])
+    y = np.concatenate([y_g, y_r])
+    s = np.concatenate([s_g, s_r])
+    # subtract per-band means (zero-mean prior assumption)
+    means = np.array([y[X[:, 1] == 0].mean(), y[X[:, 1] == 1].mean()])
+    y0 = y - means[X[:, 1].astype(int)]
+    return X, y0, s, means
+
+# Build a test grid covering both bands
+t_min = min(min(sn['t_g']), min(sn['t_r']))
+t_max = max(max(sn['t_g']), max(sn['t_r']))
+t_grid = np.linspace(t_min - 2, t_max + 2, 400)
+X_test = np.vstack([np.column_stack([t_grid, np.zeros_like(t_grid)]),
+                    np.column_stack([t_grid, np.ones_like(t_grid)])])
+
+# Hide ~70% of r-band detections to demonstrate cross-band recovery
+rng = np.random.default_rng(1)
+r_full = np.asarray(sn['y_r'])
+hide = rng.random(r_full.size) < 0.7
+
+# Hyperparameters chosen by hand for the demo (tune ell to the SN timescale)
+ell, sigma_f, rho = 8.0, 1.0, 0.95
+
+X_train, y_train, sigma_train, means = stack(sn, hide_r_mask=hide)
+mu, std = fit_coreg(X_train, y_train, sigma_train, X_test, ell, sigma_f, rho)
+mu_full = mu + np.r_[np.full(t_grid.size, means[0]),
+                      np.full(t_grid.size, means[1])]
+
+# Held-out r-band detections (for plotting "ground truth" we hide)
+t_r_full = np.asarray(sn['t_r']);  s_r_full = np.asarray(sn['s_r'])
+fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
+for ax, b, letter, color in [(axes[0], 0, 'g', 'C2'), (axes[1], 1, 'r', 'C3')]:
+    msk = X_test[:, 1] == b
+    ax.fill_between(X_test[msk, 0], mu_full[msk] - 2*std[msk], mu_full[msk] + 2*std[msk],
+                    alpha=0.15, color=color)
+    ax.plot(X_test[msk, 0], mu_full[msk], '-', color=color, lw=1.5,
+            label=f'joint GP mean ({letter})')
+    if b == 0:
+        ax.errorbar(sn['t_g'], sn['y_g'], yerr=sn['s_g'], fmt='.', ms=5, alpha=0.7,
+                    color='k', label='g observations')
+    else:
+        ax.errorbar(t_r_full[~hide], r_full[~hide], yerr=s_r_full[~hide],
+                    fmt='.', ms=5, alpha=0.7, color='k', label='r observations (used)')
+        ax.errorbar(t_r_full[hide], r_full[hide], yerr=s_r_full[hide],
+                    fmt='x', ms=6, alpha=0.7, color='gray', label='r HIDDEN (truth)')
+    ax.invert_yaxis(); ax.set_ylabel(f'{letter} mag'); ax.legend(fontsize=8)
+axes[1].set_xlabel('MJD')
+axes[0].set_title(f'Joint multi-band GP: cross-band prediction with 70% of r hidden\\n'
+                   f'ℓ={ell} d, σ_f={sigma_f}, ρ_gr={rho}')
+plt.tight_layout(); plt.show()""")
+
+
+# ============================================================
 # 43. Summary
 # ============================================================
 md("""## 43. Summary
@@ -1592,12 +1836,18 @@ md("""## 43. Summary
   - Continuous & discrete Fourier transforms, Nyquist, window functions
   - **Generalized Lomb–Scargle** for unevenly sampled, heteroscedastic data
   - **Multi-term LS / truncated Fourier** when the lightcurve has a non-sinusoidal shape
+- Key tools introduced in Part III (non-parametric modelling):
+  - **Gaussian processes** with hand-rolled and sklearn implementations
+  - Squared-exponential, Matérn, periodic kernels — and their sums/products
+  - **Multi-band joint GPs (ICM)** for cross-band prediction
 
 References used in the notebook:
 - VanderPlas 2018, *Understanding the Lomb–Scargle Periodogram*
 - Eyheramendy et al. 2018 (IAR), Kelly et al. 2014 (CARMA)
 - Zechmeister & Kürster 2009 (generalized LS)
+- Rasmussen & Williams 2006, *Gaussian Processes for Machine Learning*
 - OGLE-IV Collection of Variable Stars — Soszyński et al.
+- ALeRCE broker — Förster et al. 2021
 """)
 
 

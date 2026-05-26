@@ -8,6 +8,14 @@
 
 Photon counts from the galactic X-ray binary **GX 5-1** observed by the Ginga satellite, binned at 1/128 s (~512 s total). This is the same series the PDF uses on slides 20, 25, 27, 29, 40–42, 44. Mean ≈ 69 cts/bin, std ≈ 10. The variance exceeds the pure-Poisson expectation $\\sqrt{\\bar N} \\approx 8.3$, and a broad QPO appears near $f \\approx 0.19$ in units of the sampling frequency.
 
+## Supernova lightcurve for the Gaussian-process section
+
+| File | Source | Bands | N obs | Span | Use case |
+|------|--------|-------|-------|------|----------|
+| `sn_lightcurve.json` | ALeRCE / ZTF, `ZTF20abvtozi` (SN Ia) | g, r | 83 + 91 | 106 d | GP interpolation per band and joint multi-band GP |
+
+Difference-image PSF magnitudes (`magpsf` / `sigmapsf`) — appropriate for transients, since the template flux is zero by construction. Fetched once with the inline downloader at the top of the GP notebook section.
+
 ## OGLE-IV RR Lyrae lightcurves
 
 Two real RR Lyrae lightcurves from the **OGLE-IV Collection of Variable Stars** (Bulge fields, I-band photometry). Used by `timeseries_examples.ipynb` for the period-finding sections.

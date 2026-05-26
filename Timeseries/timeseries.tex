@@ -5,6 +5,7 @@
 
 \usecolortheme{seahorse}
 \usepackage[latin1]{inputenc}
+\usepackage{bm}
 
 %\usepackage{bookman}
 \usetheme{Madrid}
@@ -155,9 +156,9 @@
 }  
 
 \frame{
-        \includegraphics[scale=0.5]{lsst.jpg}
+        \includegraphics[scale=0.22]{rubin.jpg}
 
-        The future Large Synoptic Survey Telescope (LSST).
+        The future Vera C. Rubin Observatory and its Legacy Survey of Space and Time (LSST).
 }  
 
 \frame{
@@ -1350,13 +1351,132 @@ $\Rightarrow$
 }
 
 
+\frame{
+
+  \begin{center}
+    {\huge III. Gaussian processes }
+  \end{center}
+}
+
+
+%%%%%%%%%%%%%%%%%%%%
+\section{Gaussian processes}
+
+\frame{
+  \frametitle{Gaussian processes}
+
+  \bi
+  \item A {\bf Gaussian process (GP)} is a collection of random
+    variables, any finite subset of which has a multivariate Gaussian
+    distribution.
+  \item Fully specified by a {\bf mean function} $m(t)$ and a {\bf
+      covariance (kernel) function} $k(t, t')$:
+    \begin{align}
+      f(t) \sim \mathcal{GP}(m(t), \, k(t, t'))
+    \end{align}
+  \item Intuition: a probability distribution {\bf over functions}.
+    Any finite set of times $t_1, ..., t_n$ has joint distribution
+    \begin{align}
+      [f(t_1), ..., f(t_n)] \sim \mathcal{N}(\bm{m}, \bm{K}), ~~~ K_{ij} = k(t_i, t_j)
+    \end{align}
+  \item Naturally handles {\bf irregular sampling} and {\bf
+      heteroscedastic errors} (just add $\sigma_i^2$ to the diagonal).
+  \ei
+}
+
+\frame{
+  \frametitle{Kernels}
+
+  The kernel encodes assumptions about smoothness, periodicity, and
+  characteristic timescales.
+
+  \bi
+  \item {\bf Squared exponential} (RBF, infinitely smooth):
+    \begin{align}
+      k_{\rm SE}(t, t') = \sigma_f^2 \exp\biggl(-\frac{(t-t')^2}{2 \ell^2} \biggr)
+    \end{align}
+  \item {\bf Mat\'ern} (controllable smoothness $\nu$):
+    \begin{align}
+      k_{\nu = 3/2}(t, t') = \sigma_f^2 (1 + \sqrt{3}r/\ell)\, e^{-\sqrt{3} r/\ell}, ~~~ r = |t-t'|
+    \end{align}
+  \item {\bf Periodic}:
+    \begin{align}
+      k_{\rm per}(t, t') = \sigma_f^2 \exp\biggl(-\frac{2 \sin^2(\pi (t-t')/P)}{\ell^2} \biggr)
+    \end{align}
+  \item Kernels {\bf add} (independent components) and {\bf multiply}
+    (joint constraints) to model complex behaviour.
+  \ei
+}
+
+\frame{
+  \frametitle{GP regression}
+
+  Given training data $(t, y)$ with noise variances $\sigma^2$ and
+  query times $t_*$:
+
+  \bi
+  \item Build $K_{ij} = k(t_i, t_j) + \sigma_i^2 \delta_{ij}$, $\;K_*
+    = k(t_*, t)$, $\;K_{**} = k(t_*, t_*)$.
+  \item {\bf Posterior mean and covariance} at $t_*$:
+    \begin{align}
+      \bm{\mu}_*  &= K_*\, K^{-1}\, \bm{y} \\
+      \bm{\Sigma}_* &= K_{**} - K_*\, K^{-1}\, K_*^T
+    \end{align}
+  \item Closed--form, no iteration. Cost is $\mathcal{O}(n^3)$ for the
+    matrix inverse $\Rightarrow$ practical up to a few thousand points.
+  \item {\bf Hyperparameter learning} maximises the marginal
+    log--likelihood
+    \begin{align}
+      \log p(\bm{y}|\theta) = -\tfrac{1}{2} \bm{y}^T K^{-1} \bm{y} - \tfrac{1}{2} \log |K| - \tfrac{n}{2} \log 2\pi
+    \end{align}
+  \ei
+}
+
+\frame{
+  \frametitle{Multi--output / multi--band GPs}
+
+  Astronomical light curves are observed in {\bf several bands}; the
+  bands are correlated (they sample the same underlying source).
+
+  \bi
+  \item {\bf Separable (intrinsic coregionalization)}
+    \begin{align}
+      k\bigl((t,b),(t',b')\bigr) = k_t(t, t') \cdot k_b(b, b')
+    \end{align}
+    where $k_b$ encodes how strongly band $b$ and band $b'$ are
+    correlated.
+  \item Joint fit across bands lets observations in band $g$ help
+    predict band $r$ (and vice versa) at unobserved times.
+  \item More general: {\bf linear model of coregionalization (LMC)},
+    {\bf latent factor GPs}, {\bf neural GPs}.
+  \ei
+}
+
+\frame{
+  \frametitle{Applications in astronomy}
+
+  \bi
+  \item Light--curve {\bf interpolation} on irregular cadences
+    (CARMA itself is a special case of a GP with Mat\'ern--like kernel).
+  \item Transient {\bf classification}: GP--smoothed light curves as
+    feature input to neural nets (e.g.\ {\sc rapid}, {\sc supernnova},
+    {\sc parsnip}).
+  \item Quasar / AGN modelling: damped--random--walk kernel
+    (Kelly+09).
+  \item Stellar activity in radial velocity (rotation kernel).
+  \item Time--delay cosmography (multiply--imaged quasars).
+  \ei
+}
+
+
+%%%%%%%%%%%%%%%%%%%%
 \section{Summary}
 
 \frame{
   \frametitle{Summary}
 
   \bi
-  
+
   \item Astronomical timeseries are unevenly sampled, have heteroscedastic errors and low signal to noise
 
   \item Some important concepts: autocovariance and autocorrelation,
@@ -1370,6 +1490,10 @@ $\Rightarrow$
     generalized Lomb-Scargle method.  When the underlying light curve
     cannot be represented by a few Fourier terms use more
     sophisticated methods.
+
+  \item For flexible non--parametric modelling that handles uneven
+    sampling, heteroscedastic errors, and multi--band correlations,
+    use {\bf Gaussian processes}.
 
   \ei
 
