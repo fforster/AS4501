@@ -1,0 +1,5 @@
+# Large dust-map data fetched by dustmaps (SFD, ~130 MB) — re-downloadable
+dustmaps_data/
+
+# Jupyter checkpoint artifacts
+.ipynb_checkpoints/
